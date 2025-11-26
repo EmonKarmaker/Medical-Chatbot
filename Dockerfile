@@ -22,5 +22,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Run the Render version
-CMD ["python", "app_render.py"]
+# Run with Gunicorn (production-ready)
+CMD gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 app_render:app
