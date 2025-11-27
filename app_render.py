@@ -1,10 +1,8 @@
 from flask import Flask, render_template, request
-from src.helper import download_hugging_face_embeddings
 from langchain_pinecone import PineconeVectorStore
 from dotenv import load_dotenv
 import requests
 import os
-import json
 
 app = Flask(__name__)
 
@@ -15,12 +13,28 @@ os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
 
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY')
 
-# Initialize embeddings
-embeddings = download_hugging_face_embeddings()
-docsearch = PineconeVectorStore.from_existing_index(
-    index_name="medical-chatbot",
-    embedding=embeddings
-)
+# Global variables (will be initialized on first request)
+embeddings = None
+docsearch = None
+
+def initialize_components():
+    """Initialize embeddings and Pinecone on first request (lazy loading)"""
+    global embeddings, docsearch
+    
+    if embeddings is None:
+        print("🔄 Initializing embeddings (first request)...")
+        from src.helper import download_hugging_face_embeddings
+        embeddings = download_hugging_face_embeddings()
+        
+    if docsearch is None:
+        print("🔄 Connecting to Pinecone...")
+        docsearch = PineconeVectorStore.from_existing_index(
+            index_name="medical-chatbot",
+            embedding=embeddings
+        )
+        print("✅ Components initialized!")
+    
+    return docsearch
 
 def get_medical_answer(question):
     """
@@ -28,6 +42,9 @@ def get_medical_answer(question):
     Works with any httpx version
     """
     try:
+        # Initialize components on first request (lazy loading)
+        docsearch = initialize_components()
+        
         # Get relevant documents from Pinecone
         docs = docsearch.similarity_search(question, k=3)
         context = "\n".join([doc.page_content for doc in docs])
@@ -87,6 +104,11 @@ def get_medical_answer(question):
 @app.route("/")
 def index():
     return render_template('chat.html')
+
+@app.route("/health")
+def health():
+    """Health check endpoint for Render"""
+    return {"status": "ok"}, 200
 
 @app.route("/get", methods=["POST"])
 def chat():
